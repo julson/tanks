@@ -1,44 +1,18 @@
 'use strict';
 
+var utils = require('./utils.js');
+
 var spriteSheet;
+
+const ROTATIONAL_VELOCITY = 5;
+const TANK_SPEED = 2;
+const BULLET_SPEED = 10;
+const RELOAD_TIME = 700; //ms
 
 var textureData = {
   tiles : {
     dirt : { x : 0, y : 0, width : 128, height : 128 }
-  },
-  tanks : {
-    red : { x : 568, y : 440, width : 75, height : 70,
-            halfWidth : 37.5, halfHeight : 35 },
-    beige : { x : 730, y :340, width : 75, height : 70,
-              halfWidth : 37.5, halfHeight : 35 }
-  },
-  barrels : {
-    red : { x : 842, y : 158, width : 16, height : 50,
-            halfWidth : 8 },
-    beige : { x : 842, y : 108, width : 16, height : 50,
-              halfWidth : 8 }
-  },
-  bullets : {
-    beige : { x : 188, y : 345, width : 12, height : 26 }
   }
-};
-
-const ROTATIONAL_VELOCITY = 5;
-const TANK_SPEED = 3;
-const TANK_TEXTURE_ROTATION_OFFSET = 90;
-const BARREL_TEXTURE_ROTATION_OFFSET = -90;
-const BULLET_TEXTURE_ROTATION_OFFSET = 90;
-const BULLET_SPEED = 10;
-const RELOAD_TIME = 700; //ms
-
-var utils = require('./utils.js');
-
-var appState = {
-  player : {
-    keysPressed : new Set()
-  },
-  tanks : [],
-  bullets : []
 };
 
 function loadAssets (callback) {
@@ -55,116 +29,233 @@ function resizeCanvas () {
   canvas.height = window.innerHeight;
 }
 
-class Vector2D {
+class Entity {
+  constructor () {
+    this.id = uuid.v4();
+  }
+}
+
+class Position {
   constructor (x, y) {
     this.x = x;
     this.y = y;
   }
 }
 
-class Entity {
-  constructor (x, y) {
-    this.position = new Vector2D(x, y);
+class Velocity {
+  constructor (angle, speed) {
+    this.angle = angle;
+    this.speed = speed;
+  }
+}
+
+// assumes a quad for now
+class Dimension {
+  constructor (width, height) {
+    this.width = width;
+    this.height = height;
+    this.halfWidth = width/2;
+    this.halfHeight = height/2;
+  }
+}
+
+class Sprite {
+  constructor (x, y, rotationOffset, heightOffset) {
+    this.x = x;
+    this.y = y;
+    this.rotationOffset = rotationOffset || 0;
+    this.heightOffset = heightOffset || 0; // mainly used to adjust barrel center
+  }
+}
+
+function tankSprite (color) {
+  switch (color) {
+  case 'red' : return new Sprite(568, 440, 90);
+  case 'beige':
+    default : return new Sprite(730, 340, 90);
   }
 }
 
 class Tank extends Entity {
-  constructor (color, x, y) {
-    super(x, y);
-    this.color = color;
+  constructor (color, position, barrelId) {
+    super();
+
+    this.position = position;
+    this.velocity = new Velocity(0, 0);
+    this.dimension = new Dimension(75, 70);
+    this.sprite = tankSprite(color);
     this.health = 100;
     this.rotation = 0;
-    this.barrelRotation = 0;
   }
 }
 
-function updatePlayer (playerState) {
-  var tank = playerState.tank;
-
-  if (playerState.keysPressed.has(65)) { // A
-    tank.rotation -= ROTATIONAL_VELOCITY;
-  } else if (playerState.keysPressed.has(68)) { // D
-    tank.rotation += ROTATIONAL_VELOCITY;
-  }
-
-  if (tank.rotation === 360 || tank.rotation === -360) {
-    tank.rotation = 0; // make sure we don't have a high rotation value
-  }
-
-  var angleInRadians = utils.toRadians(tank.rotation);
-  if (playerState.keysPressed.has(83)) { // W
-    tank.position.y -= Math.sin(angleInRadians) * TANK_SPEED;
-    tank.position.x -= Math.cos(angleInRadians) * TANK_SPEED;
-  } else if (playerState.keysPressed.has(87)) { // S
-    tank.position.y += Math.sin(angleInRadians) * TANK_SPEED;
-    tank.position.x += Math.cos(angleInRadians) * TANK_SPEED;
+function barrelSprite (color) {
+  switch(color) {
+  case 'red' : return new Sprite(842, 158, -90, 20);
+  case 'beige' :
+    default : return new Sprite(842, 108, -90, 20);
   }
 }
 
-function updateEnemies () {
-
-}
-
-function updateBarrel (playerState) {
-  var tank = playerState.tank;
-  if (playerState.keysPressed.has(74)) { // J
-    tank.barrelRotation -= ROTATIONAL_VELOCITY;
-  } else if (playerState.keysPressed.has(75)) { // L
-    tank.barrelRotation += ROTATIONAL_VELOCITY;
-  }
-
-  if (tank.barrelRotation === 360 || tank.barrelRotation === -360) {
-    tank.barrelRotation = 0;
+class Barrel extends Entity {
+  constructor (color, position) {
+    super();
+    this.position = position;
+    this.velocity = new Velocity(0, 0);
+    this.dimension = new Dimension(16, 50);
+    this.sprite = barrelSprite(color);
+    this.rotation = 0;
   }
 }
 
-function fireBullet (playerState) {
-  playerState.lastFired = new Date();
-
-  var initialAngle = playerState.tank.rotation + playerState.tank.barrelRotation;
-
-  var angleInRadians = initialAngle * Math.PI / 180;
-  var tankData = textureData.tanks.red;
-  var bullet = {
-    x : playerState.tank.x + tankData.halfWidth,
-    y : playerState.tank.y + tankData.halfHeight,
-    dx : Math.cos(angleInRadians) * BULLET_SPEED,
-    dy : Math.sin(angleInRadians) * BULLET_SPEED,
-    angle : initialAngle
-  };
-  return bullet;
+class Bullet extends Entity {
+  constructor (tankId, position, velocity) {
+    super();
+    this.tankId = tankId;
+    this.position = position;
+    this.velocity = velocity;
+    this.dimension = new Dimension(12, 26);
+    this.sprite = new Sprite(188, 345, 90);
+    this.rotation = velocity.angle;
+  }
 }
 
-function updateBullets (playerState) {
+class Player extends Entity {
+  constructor (tankId) {
+    super();
+    this.tankId = tankId;
+    this.keysPressed = new Set();
+  }
+}
 
-  if (playerState.keysPressed.has(32) &&
-      (playerState.lastFired === undefined ||
-       Date.now() - playerState.lastFired > RELOAD_TIME)) {
-    appState.bullets.push(fireBullet());
+function rotate (angle, change) {
+  change = change || 0;
+  // make sure we don't end up with a high rotational value;
+
+  return (angle + change) % 360;
+}
+
+function canFire (tank) {
+  return tank.lastFired === undefined
+    || Date.now() - tank.lastFired > RELOAD_TIME;
+}
+
+function fireBullet (tankId, barrel) {
+  var initialAngle = rotate(barrel.rotation);
+  var x = barrel.position.x + Math.cos(utils.toRadians(initialAngle)) * barrel.dimension.height;
+  var y = barrel.position.y + Math.sin(utils.toRadians(initialAngle)) * barrel.dimension.height;
+  var position = new Position(x, y);
+  var velocity = new Velocity(initialAngle, BULLET_SPEED);
+  return new Bullet(tankId, position, velocity);
+}
+
+function processInput (playerId, entities) {
+  var player = entities[playerId];
+  var tank = entities[player.tankId];
+  var barrel = entities[tank.barrelId];
+
+  // TANK ROTATION
+  if (player.keysPressed.has(65)) { // A
+    tank.rotation = rotate(tank.rotation, -ROTATIONAL_VELOCITY);
+    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY);
+  } else if (player.keysPressed.has(68)) { // D
+    tank.rotation = rotate(tank.rotation, ROTATIONAL_VELOCITY);
+    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY);
   }
 
-  var canvas = document.getElementById('canvas');
+  // TANK/BARREL MOVEMENT
+  if (player.keysPressed.has(87)) { // W
+    tank.velocity = new Velocity(tank.rotation, TANK_SPEED);
+    barrel.velocity = tank.velocity;
+  } else if (player.keysPressed.has(83)) { // S
+    tank.velocity = new Velocity(tank.rotation, -TANK_SPEED);
+    barrel.velocity = tank.velocity;
+  } else {
+    tank.velocity = new Velocity(tank.rotation, 0);
+    barrel.velocity = tank.velocity;
+  }
 
-  var newBullets = [];
-  for (let i = 0; i < appState.bullets.length; i++) {
-    var bullet = appState.bullets[i];
-    bullet.x += bullet.dx;
-    bullet.y += bullet.dy;
+  // BARREL ROTATION
+  if (player.keysPressed.has(74)) { // J
+    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY);
+  } else if (player.keysPressed.has(75)) { // K
+    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY);
+  }
 
-    if (bullet.x >= 0 && bullet.x <= canvas.width
-        && bullet.y >= 0 && bullet.y <= canvas.height) {
-      newBullets.push(bullet);
+  // FIRE COMMAND
+  if (player.keysPressed.has(32) && canFire(tank)) { // SPACE
+    var bullet = fireBullet(tank.id, barrel);
+    tank.lastFired = new Date();
+    entities[bullet.id] = bullet;
+  }
+}
+
+function move (entities) {
+  _.forEach(entities, function (entity) {
+    if (entity.velocity && entity.position) {
+      var inRadians = utils.toRadians(entity.velocity.angle);
+      var dx = Math.cos(inRadians) * entity.velocity.speed;
+      entity.position.x += dx;
+      var dy = Math.sin(inRadians) * entity.velocity.speed;
+      entity.position.y += dy;
     }
-  }
 
-  appState.bullets = newBullets;
+    return entity;
+  });
 }
 
-function updateState (appState) {
-  updatePlayer(appState.player);
-  updateBarrel(appState.player);
-  updateEnemies();
-  updateBullets(appState.player);
+function draw (entities) {
+  var canvas = document.getElementById('canvas');
+  var context = canvas.getContext('2d');
+
+  _.forEach(entities, function (entity) {
+    context.save();
+    context.resetTransform();
+
+    context.translate(entity.position.x, entity.position.y);
+
+
+    var sprite = entity.sprite;
+    if (entity.rotation !== undefined) {
+      var inRadians = utils.toRadians(entity.rotation + sprite.rotationOffset);
+      context.rotate(inRadians);
+    }
+
+    if (entity instanceof Barrel) {
+      console.log(JSON.stringify(entity));
+    }
+
+    var dimension = entity.dimension;
+    context.drawImage(spriteSheet,
+                      sprite.x,
+                      sprite.y,
+                      dimension.width,
+                      dimension.height,
+                      -dimension.halfWidth,
+                      -dimension.halfHeight + sprite.heightOffset,
+                      dimension.width,
+                      dimension.height);
+    context.restore();
+  });
+}
+
+function render (entities) {
+
+  var tanks = []; //make sure these get rendered first;
+  var rest = [];
+
+  _.forEach(entities, function (entity) {
+    if (entity.dimension && entity.sprite && entity.position) {
+      if (entity instanceof Tank) {
+        tanks.push(entity);
+      } else {
+        rest.push(entity);
+      }
+    }
+  });
+
+  draw(tanks);
+  draw(rest);
 }
 
 function renderTiles () {
@@ -193,123 +284,55 @@ function renderTiles () {
 
 }
 
-function renderTanks (tanks) {
-  var canvas = document.getElementById('canvas');
-  var context = canvas.getContext('2d');
-
-  for (let i = 0; i < tanks.length; i++) {
-    context.save();
-    context.resetTransform();
-
-    var tank = tanks[i];
-    var tankTexture = textureData.tanks[tank.color];
-
-    context.translate(tank.position.x + tankTexture.halfWidth,
-                      tank.position.y + tankTexture.halfHeight);
-
-    var angleInRadians = utils.toRadians(tank.rotation + TANK_TEXTURE_ROTATION_OFFSET);
-    context.rotate(angleInRadians);
-
-    context.drawImage(spriteSheet,
-                      tankTexture.x,
-                      tankTexture.y,
-                      tankTexture.width,
-                      tankTexture.height,
-                      -tankTexture.halfWidth,
-                      -tankTexture.halfHeight,
-                      tankTexture.width,
-                      tankTexture.height);
-
-    context.restore();
-  }
-}
-
-function renderBarrels (playerState) {
-  var canvas = document.getElementById('canvas');
-  var context = canvas.getContext('2d');
-
-  context.save();
-  context.resetTransform();
-
-  var tankData = textureData.tanks.red;
-  var tank = playerState.tank;
-
-  context.translate(tank.position.x + tankData.halfWidth,
-                    tank.position.y + tankData.halfHeight);
-
-  var absoluteRotation = appState.player.tank.rotation
-        + appState.player.tank.barrelRotation
-        + BARREL_TEXTURE_ROTATION_OFFSET;
-  var angleInRadians = utils.toRadians(absoluteRotation);
-  context.rotate(angleInRadians);
-
-  var barrelData = textureData.barrels.red;
-  context.drawImage(spriteSheet,
-                    barrelData.x,
-                    barrelData.y,
-                    barrelData.width,
-                    barrelData.height,
-                    -barrelData.halfWidth,
-                    -barrelData.halfWidth,
-                    barrelData.width,
-                    barrelData.height);
-  context.restore();
-}
-
-function renderBullets () {
-  var canvas = document.getElementById('canvas');
-  var context = canvas.getContext('2d');
-
-  var bulletData = textureData.bullets.beige;
-  for (let i = 0; i < appState.bullets.length; i++) {
-    var bullet = appState.bullets[i];
-    context.save();
-
-    context.translate(bullet.x, bullet.y);
-    var angle = bullet.angle + BULLET_TEXTURE_ROTATION_OFFSET;
-    var angleInRadians = angle  * Math.PI / 180;
-    context.rotate(angleInRadians);
-    context.drawImage(spriteSheet,
-                      bulletData.x,
-                      bulletData.y,
-                      bulletData.width,
-                      bulletData.height,
-                      0,
-                      0,
-                      bulletData.width,
-                      bulletData.height);
-    context.restore();
-  }
-}
-
-function render () {
+function main (playerId, entities) {
+  processInput(playerId, entities);
+  move(entities);
   renderTiles();
-  renderTanks(appState.tanks);
-  renderBarrels(appState.player);
-  renderBullets();
+  render(entities);
+  window.requestAnimationFrame(function () {
+    return main(playerId, entities);
+  });
 }
 
-function main () {
-  updateState(appState);
-  render();
-  window.requestAnimationFrame(main);
+function createPlayer (entities) {
+  var player = new Player();
+
+  document.addEventListener('keyup', function (e) {
+    player.keysPressed.delete(e.keyCode);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    player.keysPressed.add(e.keyCode);
+  });
+
+  entities[player.id] = player;
+  return player;
+}
+
+function createTank (color, position, entities) {
+  var initialPos = new Position(50, 50);
+  var barrel = new Barrel(color, position);
+  entities[barrel.id] = barrel;
+
+  var tank = new Tank(color, position, barrel.id);
+  tank.barrelId = barrel.id;
+  entities[tank.id] = tank;
+
+  return tank;
 }
 
 function init () {
-  loadAssets(main);
-  appState.player.tank = new Tank('red', 30, 30);
-  appState.tanks.push(appState.player.tank);
-  appState.tanks.push(new Tank('beige', 180, 180));
+  loadAssets(function () {
+    var entities = {};
+    var player = createPlayer(entities);
+    var playerTank = createTank('red', new Position(50, 50), entities);
+    player.tankId = playerTank.id;
+
+    var enemyTank = createTank('beige', new Position(180, 180), entities);
+
+    main(player.id, entities);
+  });
 }
-
-document.addEventListener('keyup', function (e) {
-  appState.player.keysPressed.delete(e.keyCode);
-}, true);
-
-document.addEventListener('keydown', function (e) {
-  appState.player.keysPressed.add(e.keyCode);
-  console.log(e.keyCode);
-}, true);
 
 document.addEventListener('DOMContentLoaded', function (event) {
   window.addEventListener('resize', resizeCanvas, false);
