@@ -5,9 +5,9 @@ var collision = require('./collision.js');
 
 var spriteSheet;
 
-const ROTATIONAL_VELOCITY = 5;
-const TANK_SPEED = 2;
-const BULLET_SPEED = 10;
+const ROTATIONAL_VELOCITY = 200;
+const TANK_SPEED = 100;
+const BULLET_SPEED = 800;
 const RELOAD_TIME = 700; //ms
 
 var textureData = {
@@ -143,18 +143,18 @@ function fireBullet (tankId, barrel) {
   return new Bullet(tankId, position, velocity);
 }
 
-function processInput (playerId, entities) {
+function processInput (dt, playerId, entities) {
   var player = entities[playerId];
   var tank = entities[player.tankId];
   var barrel = entities[tank.barrelId];
 
   // TANK ROTATION
   if (player.keysPressed.has(65)) { // A
-    tank.rotation = rotate(tank.rotation, -ROTATIONAL_VELOCITY);
-    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY);
+    tank.rotation = rotate(tank.rotation, -ROTATIONAL_VELOCITY * dt);
+    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY * dt);
   } else if (player.keysPressed.has(68)) { // D
-    tank.rotation = rotate(tank.rotation, ROTATIONAL_VELOCITY);
-    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY);
+    tank.rotation = rotate(tank.rotation, ROTATIONAL_VELOCITY * dt);
+    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY * dt);
   }
 
   // TANK/BARREL MOVEMENT
@@ -171,9 +171,9 @@ function processInput (playerId, entities) {
 
   // BARREL ROTATION
   if (player.keysPressed.has(74)) { // J
-    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY);
+    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY * dt);
   } else if (player.keysPressed.has(75)) { // K
-    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY);
+    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY * dt);
   }
 
   // FIRE COMMAND
@@ -184,13 +184,13 @@ function processInput (playerId, entities) {
   }
 }
 
-function move (entities) {
+function move (dt, entities) {
   _.forEach(entities, function (entity) {
     if (entity.velocity && entity.position) {
       var inRadians = utils.toRadians(entity.velocity.angle);
-      var dx = Math.cos(inRadians) * entity.velocity.speed;
+      var dx = Math.cos(inRadians) * entity.velocity.speed * dt;
       entity.position.x += dx;
-      var dy = Math.sin(inRadians) * entity.velocity.speed;
+      var dy = Math.sin(inRadians) * entity.velocity.speed * dt;
       entity.position.y += dy;
     }
 
@@ -293,14 +293,18 @@ function renderTiles () {
 
 }
 
-function main (playerId, entities) {
-  processInput(playerId, entities);
-  move(entities);
+function main (lastTime, playerId, entities) {
+  let now = Date.now();
+  let dt = (now - lastTime) / 1000.0;
+
+  processInput(dt, playerId, entities);
+  move(dt, entities);
   checkCollisions(entities);
   renderTiles();
   render(entities);
+
   window.requestAnimationFrame(function () {
-    return main(playerId, entities);
+    return main(now, playerId, entities);
   });
 }
 
@@ -343,7 +347,7 @@ function init () {
       let coord = new utils.Vector(coords[i][0], coords[i][1]);
       createTank('beige', coord, entities);
     }
-    main(player.id, entities);
+    main(new Date, player.id, entities);
   });
 }
 
