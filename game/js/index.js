@@ -1,6 +1,7 @@
 'use strict';
 
 var utils = require('./utils.js');
+var collision = require('./collision.js');
 
 var spriteSheet;
 
@@ -35,13 +36,6 @@ class Entity {
   }
 }
 
-class Position {
-  constructor (x, y) {
-    this.x = x;
-    this.y = y;
-  }
-}
-
 class Velocity {
   constructor (angle, speed) {
     this.angle = angle;
@@ -49,7 +43,7 @@ class Velocity {
   }
 }
 
-// assumes a quad for now
+// assumes a rectangle for now
 class Dimension {
   constructor (width, height) {
     this.width = width;
@@ -144,7 +138,7 @@ function fireBullet (tankId, barrel) {
   var initialAngle = rotate(barrel.rotation);
   var x = barrel.position.x + Math.cos(utils.toRadians(initialAngle)) * barrel.dimension.height;
   var y = barrel.position.y + Math.sin(utils.toRadians(initialAngle)) * barrel.dimension.height;
-  var position = new Position(x, y);
+  var position = new utils.Vector(x, y);
   var velocity = new Velocity(initialAngle, BULLET_SPEED);
   return new Bullet(tankId, position, velocity);
 }
@@ -221,10 +215,6 @@ function draw (entities) {
       context.rotate(inRadians);
     }
 
-    if (entity instanceof Barrel) {
-      console.log(JSON.stringify(entity));
-    }
-
     var dimension = entity.dimension;
     context.drawImage(spriteSheet,
                       sprite.x,
@@ -237,6 +227,25 @@ function draw (entities) {
                       dimension.height);
     context.restore();
   });
+}
+
+function checkCollisions (entities) {
+  let tanks = _.filter(entities, v => v instanceof Tank);
+  let bullets = _.filter(entities, v => v instanceof Bullet);
+
+  for (let i = 0; i < tanks.length; i++) {
+    for (let j = 0; j < bullets.length; j++) {
+      let tank = tanks[i];
+      let bullet = bullets[j];
+      if (bullet.tankId !== tank.id) {
+        if (collision.isColliding(tank, bullet)) {
+          delete entities[tank.barrelId];
+          delete entities[tank.id];
+          delete entities[bullet.id];
+        }
+      }
+    }
+  }
 }
 
 function render (entities) {
@@ -287,6 +296,7 @@ function renderTiles () {
 function main (playerId, entities) {
   processInput(playerId, entities);
   move(entities);
+  checkCollisions(entities);
   renderTiles();
   render(entities);
   window.requestAnimationFrame(function () {
@@ -310,7 +320,7 @@ function createPlayer (entities) {
 }
 
 function createTank (color, position, entities) {
-  var initialPos = new Position(50, 50);
+  var initialPos = new utils.Vector(50, 50);
   var barrel = new Barrel(color, position);
   entities[barrel.id] = barrel;
 
@@ -325,11 +335,14 @@ function init () {
   loadAssets(function () {
     var entities = {};
     var player = createPlayer(entities);
-    var playerTank = createTank('red', new Position(50, 50), entities);
+    var playerTank = createTank('red', new utils.Vector(50, 50), entities);
     player.tankId = playerTank.id;
 
-    var enemyTank = createTank('beige', new Position(180, 180), entities);
-
+    let coords = [[180, 180], [500, 250], [250, 300], [400, 400]];
+    for (let i = 0; i < coords.length; i++) {
+      let coord = new utils.Vector(coords[i][0], coords[i][1]);
+      createTank('beige', coord, entities);
+    }
     main(player.id, entities);
   });
 }
