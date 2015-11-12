@@ -4,6 +4,7 @@ var utils = require('./utils.js');
 var collision = require('./collision.js');
 
 var spriteSheet;
+var Vector = utils.Vector;
 
 const ROTATIONAL_VELOCITY = 200;
 const TANK_SPEED = 100;
@@ -80,6 +81,8 @@ class Tank extends Entity {
     this.sprite = tankSprite(color);
     this.health = 100;
     this.rotation = 0;
+    this.rotationalVelocity = 0;
+    this.isFiring = false;
   }
 }
 
@@ -99,6 +102,7 @@ class Barrel extends Entity {
     this.dimension = new Dimension(16, 50);
     this.sprite = barrelSprite(color);
     this.rotation = 0;
+    this.rotationalVelocity = 0;
   }
 }
 
@@ -111,6 +115,7 @@ class Bullet extends Entity {
     this.dimension = new Dimension(12, 26);
     this.sprite = new Sprite(188, 345, 90);
     this.rotation = velocity.angle;
+    this.rotationalVelocity = 0;
   }
 }
 
@@ -122,39 +127,26 @@ class Player extends Entity {
   }
 }
 
-function rotate (angle, change) {
-  change = change || 0;
-  // make sure we don't end up with a high rotational value;
-
-  return (angle + change) % 360;
-}
-
 function canFire (tank) {
   return tank.lastFired === undefined
     || Date.now() - tank.lastFired > RELOAD_TIME;
 }
 
-function fireBullet (tankId, barrel) {
-  var initialAngle = rotate(barrel.rotation);
-  var x = barrel.position.x + Math.cos(utils.toRadians(initialAngle)) * barrel.dimension.height;
-  var y = barrel.position.y + Math.sin(utils.toRadians(initialAngle)) * barrel.dimension.height;
-  var position = new utils.Vector(x, y);
-  var velocity = new Velocity(initialAngle, BULLET_SPEED);
-  return new Bullet(tankId, position, velocity);
-}
-
-function processInput (dt, playerId, entities) {
+function processInput (playerId, entities) {
   var player = entities[playerId];
   var tank = entities[player.tankId];
   var barrel = entities[tank.barrelId];
 
   // TANK ROTATION
   if (player.keysPressed.has(65)) { // A
-    tank.rotation = rotate(tank.rotation, -ROTATIONAL_VELOCITY * dt);
-    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY * dt);
+    tank.rotationalVelocity = -ROTATIONAL_VELOCITY;
+    barrel.rotationalVelocity = -ROTATIONAL_VELOCITY;
   } else if (player.keysPressed.has(68)) { // D
-    tank.rotation = rotate(tank.rotation, ROTATIONAL_VELOCITY * dt);
-    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY * dt);
+    tank.rotationalVelocity = ROTATIONAL_VELOCITY;
+    barrel.rotationalVelocity = ROTATIONAL_VELOCITY;
+  } else {
+    tank.rotationalVelocity = 0;
+    barrel.rotationalVelocity = 0;
   }
 
   // TANK/BARREL MOVEMENT
@@ -171,20 +163,37 @@ function processInput (dt, playerId, entities) {
 
   // BARREL ROTATION
   if (player.keysPressed.has(74)) { // J
-    barrel.rotation = rotate(barrel.rotation, -ROTATIONAL_VELOCITY * dt);
+    barrel.rotationalVelocity -= ROTATIONAL_VELOCITY;
   } else if (player.keysPressed.has(75)) { // K
-    barrel.rotation = rotate(barrel.rotation, ROTATIONAL_VELOCITY * dt);
+    barrel.rotationalVelocity += ROTATIONAL_VELOCITY;
   }
 
   // FIRE COMMAND
   if (player.keysPressed.has(32) && canFire(tank)) { // SPACE
-    var bullet = fireBullet(tank.id, barrel);
-    tank.lastFired = new Date();
-    entities[bullet.id] = bullet;
+    tank.isFiring = true;
+  } else {
+    tank.isFiring = false;
   }
 }
 
-function move (dt, entities) {
+function rotate (angle, change) {
+  change = change || 0;
+  // make sure we don't end up with a high rotational value;
+
+  return (angle + change) % 360;
+}
+
+function fireBullet (tankId, barrel) {
+  var initialAngle = barrel.rotation;
+  var x = barrel.position.x + Math.cos(utils.toRadians(initialAngle)) * barrel.dimension.height;
+  var y = barrel.position.y + Math.sin(utils.toRadians(initialAngle)) * barrel.dimension.height;
+  var position = new Vector(x, y);
+  var velocity = new Velocity(initialAngle, BULLET_SPEED);
+  return new Bullet(tankId, position, velocity);
+}
+
+function update (dt, entities) {
+  // move entities
   _.forEach(entities, function (entity) {
     if (entity.velocity && entity.position) {
       var inRadians = utils.toRadians(entity.velocity.angle);
@@ -194,7 +203,22 @@ function move (dt, entities) {
       entity.position.y += dy;
     }
 
+    if (_.has(entity, 'rotation') && _.has(entity, 'rotationalVelocity')) {
+      entity.rotation = rotate(entity.rotation, entity.rotationalVelocity * dt);
+    }
+
     return entity;
+  });
+
+  // fire bullets
+  _.forEach(entities, function (entity) {
+    if (entity instanceof Tank && entity.isFiring) {
+      var barrel = entities[entity.barrelId];
+      var bullet = fireBullet(entity.id, barrel);
+      entity.lastFired = new Date();
+      entities[bullet.id] = bullet;
+      entity.isFiring = false;
+    }
   });
 }
 
@@ -297,8 +321,8 @@ function main (lastTime, playerId, entities) {
   let now = Date.now();
   let dt = (now - lastTime) / 1000.0;
 
-  processInput(dt, playerId, entities);
-  move(dt, entities);
+  processInput(playerId, entities);
+  update(dt, entities);
   checkCollisions(entities);
   renderTiles();
   render(entities);
