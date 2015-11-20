@@ -353,10 +353,9 @@ function main (lastTime, playerId, entities, mapCanvas) {
   let originX = playerTank.position.x - canvas.width/2;
   originX = constrain(originX, 0, MAP_WIDTH - canvas.width);
   let originY = playerTank.position.y - canvas.height/2;
-  originY = constrain(originY, 0, MAP_HEIGHT - canvas.width);
+  originY = constrain(originY, 0, MAP_HEIGHT - canvas.height);
 
-  let viewportOrigin = new Vector(originX < 0 ? 0 : originX,
-                                  originY < 0 ? 0 : originY);
+  let viewportOrigin = new Vector(originX, originY);
 
   renderViewport(mapCanvas, viewportOrigin);
   renderEntities(entities, viewportOrigin);
