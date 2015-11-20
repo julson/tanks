@@ -10,6 +10,8 @@ const ROTATIONAL_VELOCITY = 200;
 const TANK_SPEED = 100;
 const BULLET_SPEED = 800;
 const RELOAD_TIME = 700; //ms
+const MAP_WIDTH = 2560;
+const MAP_HEIGHT = 2560;
 
 var textureData = {
   tiles : {
@@ -222,16 +224,62 @@ function update (dt, entities) {
   });
 }
 
-function draw (entities) {
-  var canvas = document.getElementById('canvas');
-  var context = canvas.getContext('2d');
+function checkCollisions (entities) {
+  let tanks = _.filter(entities, v => v instanceof Tank);
+  let bullets = _.filter(entities, v => v instanceof Bullet);
+
+  // check bullet hits
+  for (let i = 0; i < tanks.length; i++) {
+    for (let j = 0; j < bullets.length; j++) {
+      let tank = tanks[i];
+      let bullet = bullets[j];
+      if (bullet.tankId !== tank.id) {
+        if (collision.isColliding(tank, bullet)) {
+          delete entities[tank.barrelId];
+          delete entities[tank.id];
+          delete entities[bullet.id];
+        }
+      }
+    }
+  }
+
+  let canvas = document.getElementById('canvas');
+  // check boundaries
+  _.forEach(entities, function (entity) {
+    if (!entity.position) { return; }
+
+    if (entity.position.x < 0 || entity.position.x >= MAP_WIDTH ||
+        entity.position.y < 0 || entity.position.y >= MAP_HEIGHT) {
+      if (entity instanceof Bullet) {
+        delete entities[entity.id];
+      } else {
+        entity.velocity.speed = 0;
+      }
+    }
+  });
+}
+
+function draw (entities, viewportOrigin) {
+  let canvas = document.getElementById('canvas');
+  let context = canvas.getContext('2d');
 
   _.forEach(entities, function (entity) {
+
+    let position = entity.position;
+    // skip if outside of viewport
+    if (position.x < viewportOrigin.x
+        || position.x > (viewportOrigin.x + canvas.width)
+        || position.y < viewportOrigin.y
+        || position.y > (viewportOrigin.y + canvas.height)) {
+      return;
+    }
+
     context.save();
     context.resetTransform();
 
-    context.translate(entity.position.x, entity.position.y);
-
+    let relativeX = position.x - viewportOrigin.x;
+    let relativeY = position.y - viewportOrigin.y;
+    context.translate(relativeX, relativeY);
 
     var sprite = entity.sprite;
     if (entity.rotation !== undefined) {
@@ -253,27 +301,7 @@ function draw (entities) {
   });
 }
 
-function checkCollisions (entities) {
-  let tanks = _.filter(entities, v => v instanceof Tank);
-  let bullets = _.filter(entities, v => v instanceof Bullet);
-
-  for (let i = 0; i < tanks.length; i++) {
-    for (let j = 0; j < bullets.length; j++) {
-      let tank = tanks[i];
-      let bullet = bullets[j];
-      if (bullet.tankId !== tank.id) {
-        if (collision.isColliding(tank, bullet)) {
-          delete entities[tank.barrelId];
-          delete entities[tank.id];
-          delete entities[bullet.id];
-        }
-      }
-    }
-  }
-}
-
-function render (entities) {
-
+function renderEntities (entities, center) {
   var tanks = []; //make sure these get rendered first;
   var rest = [];
 
@@ -287,49 +315,83 @@ function render (entities) {
     }
   });
 
-  draw(tanks);
-  draw(rest);
+  draw(tanks, center);
+  draw(rest, center);
 }
 
-function renderTiles () {
-  var tempCanvas = document.createElement('canvas');
-  var tileData = textureData.tiles.dirt;
-  tempCanvas.width = tileData.width;
-  tempCanvas.height = tileData.height;
+function renderViewport (mapCanvas, origin) {
+  let canvas = document.getElementById('canvas');
+  let context = canvas.getContext('2d');
 
-  var tempContext = tempCanvas.getContext('2d');
-  tempContext.drawImage(spriteSheet,
-                    tileData.x,
-                    tileData.y,
-                    tileData.width,
-                    tileData.height,
+  context.drawImage(mapCanvas,
+                    origin.x,
+                    origin.y,
+                    canvas.width,
+                    canvas.height,
                     0,
                     0,
-                    tileData.width,
-                    tileData.height);
-
-  var canvas = document.getElementById('canvas');
-  var context = canvas.getContext('2d');
-
-  var pattern = context.createPattern(tempCanvas, 'repeat');
-  context.fillStyle = pattern;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
+                    canvas.width,
+                    canvas.height);
 }
 
-function main (lastTime, playerId, entities) {
+function constrain (v, min, max) {
+  if (v < min) return min;
+  if (v > max) return max;
+  return v;
+}
+
+function main (lastTime, playerId, entities, mapCanvas) {
   let now = Date.now();
   let dt = (now - lastTime) / 1000.0;
 
   processInput(playerId, entities);
   update(dt, entities);
   checkCollisions(entities);
-  renderTiles();
-  render(entities);
+
+  let canvas = document.getElementById('canvas');
+  let playerTank = entities[entities[playerId].tankId];
+  let originX = playerTank.position.x - canvas.width/2;
+  originX = constrain(originX, 0, MAP_WIDTH - canvas.width);
+  let originY = playerTank.position.y - canvas.height/2;
+  originY = constrain(originY, 0, MAP_HEIGHT - canvas.width);
+
+  let viewportOrigin = new Vector(originX < 0 ? 0 : originX,
+                                  originY < 0 ? 0 : originY);
+
+  renderViewport(mapCanvas, viewportOrigin);
+  renderEntities(entities, viewportOrigin);
 
   window.requestAnimationFrame(function () {
-    return main(now, playerId, entities);
+    return main(now, playerId, entities, mapCanvas);
   });
+}
+
+function createMapCanvas (width, height) {
+  var tileCanvas = document.createElement('canvas');
+  var tileData = textureData.tiles.dirt;
+  tileCanvas.width = tileData.width;
+  tileCanvas.height = tileData.height;
+
+  var tileContext = tileCanvas.getContext('2d');
+  tileContext.drawImage(spriteSheet,
+                        tileData.x,
+                        tileData.y,
+                        tileData.width,
+                        tileData.height,
+                        0,
+                        0,
+                        tileData.width,
+                        tileData.height);
+
+  var mapCanvas = document.createElement('canvas');
+  var mapContext = mapCanvas.getContext('2d');
+
+  mapCanvas.width = width;
+  mapCanvas.height = height;
+  var pattern = mapContext.createPattern(tileCanvas, 'repeat');
+  mapContext.fillStyle = pattern;
+  mapContext.fillRect(0, 0, width, height);
+  return mapCanvas;
 }
 
 function createPlayer (entities) {
@@ -363,7 +425,8 @@ function init () {
   loadAssets(function () {
     var entities = {};
     var player = createPlayer(entities);
-    var playerTank = createTank('red', new utils.Vector(50, 50), entities);
+
+    var playerTank = createTank('red', new utils.Vector(MAP_WIDTH/2, MAP_HEIGHT/2), entities);
     player.tankId = playerTank.id;
 
     let coords = [[180, 180], [500, 250], [250, 300], [400, 400]];
@@ -371,7 +434,8 @@ function init () {
       let coord = new utils.Vector(coords[i][0], coords[i][1]);
       createTank('beige', coord, entities);
     }
-    main(new Date, player.id, entities);
+    let mapCanvas = createMapCanvas(MAP_WIDTH, MAP_HEIGHT);
+    main(new Date, player.id, entities, mapCanvas);
   });
 }
 
