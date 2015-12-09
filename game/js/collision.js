@@ -44,7 +44,7 @@ function projectPolygon (corners, axis) {
 }
 
 function rotate (v, center, angle) {
-  //not sure yet on why it has to be negative, but this matches to actual rotation of the object
+  //not sure yet on why it has to be negative, but this matches the actual rotation of the object
   let radians = -utils.toRadians(angle);
   let magX = (center.x - v.x);
   let magY = (center.y - v.y);

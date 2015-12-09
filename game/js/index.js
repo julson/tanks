@@ -224,20 +224,37 @@ function update (dt, entities) {
   });
 }
 
+function hitTank (entities, bullet, tank) {
+  delete entities[tank.barrelId];
+  delete entities[tank.id];
+  delete entities[bullet.id];
+}
+
 function checkCollisions (entities) {
   let tanks = _.filter(entities, v => v instanceof Tank);
   let bullets = _.filter(entities, v => v instanceof Bullet);
 
-  // check bullet hits
-  for (let i = 0; i < tanks.length; i++) {
-    for (let j = 0; j < bullets.length; j++) {
-      let tank = tanks[i];
-      let bullet = bullets[j];
-      if (bullet.tankId !== tank.id) {
-        if (collision.isColliding(tank, bullet)) {
-          delete entities[tank.barrelId];
-          delete entities[tank.id];
-          delete entities[bullet.id];
+  // TODO this is an O(n^2) approach to checking all entities
+  // Figure out a much more efficient one (e.g. broad/narrow phase checks)
+  let keys = Object.keys(entities);
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      let e1 = entities[keys[i]],
+          e2 = entities[keys[j]];
+
+      if (e1 instanceof Bullet && e2 instanceof Bullet) {
+        continue;
+      }
+
+      if (e1 instanceof Bullet && e2 instanceof Tank && e1.tankId !== e2.id) {
+        if (collision.isColliding(e1, e2)) {
+          hitTank(entities, e1, e2);
+        }
+      }
+
+      if (e1 instanceof Tank && e2 instanceof Bullet && e2.tankId !== e1.id) {
+        if (collision.isColliding(e1, e2)) {
+          hitTank(entities, e2, e1);
         }
       }
     }
