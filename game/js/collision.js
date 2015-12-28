@@ -28,6 +28,10 @@ function subtract (v1, v2) {
   return new Vector(v1.x - v2.x, v1.y - v2.y);
 }
 
+function negate (v) {
+  return new Vector(-v.x, -v.y);
+}
+
 function projectPolygon (corners, axis) {
   let min = dotProduct(corners[0], axis);
   let max = min;
@@ -93,22 +97,35 @@ module.exports = {
 
   // we assume that the polygons are quadrilaterals for now
   isColliding (p1, p2) {
-    let p1Corners = getCorners(p1);
-    let p2Corners = getCorners(p2);
+    let p1Corners = getCorners(p1),
+        p2Corners = getCorners(p2),
+        axes = getAxes(p1Corners).concat(getAxes(p2Corners)),
+        isColliding = true,
+        minInterval = null,
+        translationAxis;
 
-    let p1Axes = getAxes(p1Corners).concat(getAxes(p2Corners));
-    let p2Axes = getAxes(p2Corners);
+    for (let i = 0; i < axes.length; i++) {
+      let axis = axes[i],
+          p1Projection = projectPolygon(p1Corners, axis),
+          p2Projection = projectPolygon(p2Corners, axis),
+          interval = intervalDistance(p1Projection, p2Projection);
 
-    let isColliding = true;
-    for (let i = 0; i < p1Axes.length; i++) {
-      let axis = p1Axes[i];
-      let p1Projection = projectPolygon(p1Corners, axis);
-      let p2Projection = projectPolygon(p2Corners, axis);
-
-      if (intervalDistance(p1Projection, p2Projection) > 0) {
+      // polygons are not intersecting
+      if (interval > 0) {
         return false;
       }
+
+      interval = Math.abs(interval);
+      if (_.isNull(minInterval) || interval < minInterval) {
+        minInterval = interval;
+        translationAxis = axis;
+
+        let displacement = subtract(p1.position, p2.position);
+        if (dotProduct(displacement, translationAxis) < 0) {
+          translationAxis = negate(translationAxis);
+        }
+      }
     }
-    return true;
+    return new Vector(translationAxis.x * minInterval, translationAxis.y * minInterval);
   }
 };

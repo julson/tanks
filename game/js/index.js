@@ -105,6 +105,7 @@ class Barrel extends Entity {
     this.sprite = barrelSprite(color);
     this.rotation = 0;
     this.rotationalVelocity = 0;
+    this.ignoreCollision = true;
   }
 }
 
@@ -230,6 +231,11 @@ function hitTank (entities, bullet, tank) {
   delete entities[bullet.id];
 }
 
+function pushByMTV (entity, mtv) {
+  entity.position.x += mtv.x;
+  entity.position.y += mtv.y;
+}
+
 function checkCollisions (entities) {
   let tanks = _.filter(entities, v => v instanceof Tank);
   let bullets = _.filter(entities, v => v instanceof Bullet);
@@ -241,6 +247,10 @@ function checkCollisions (entities) {
     for (let j = i + 1; j < keys.length; j++) {
       let e1 = entities[keys[i]],
           e2 = entities[keys[j]];
+
+      if (e1.ignoreCollisions || e2.ignoreCollisions) {
+        continue;
+      }
 
       if (e1 instanceof Bullet && e2 instanceof Bullet) {
         continue;
@@ -255,6 +265,13 @@ function checkCollisions (entities) {
       if (e1 instanceof Tank && e2 instanceof Bullet && e2.tankId !== e1.id) {
         if (collision.isColliding(e1, e2)) {
           hitTank(entities, e2, e1);
+        }
+      }
+
+      if (e1 instanceof Tank && e2 instanceof Tank) {
+        var mtv = collision.isColliding(e1, e2);
+        if (mtv) {
+          pushByMTV(e1, mtv);
         }
       }
     }
