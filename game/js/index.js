@@ -105,7 +105,6 @@ class Barrel extends Entity {
     this.sprite = barrelSprite(color);
     this.rotation = 0;
     this.rotationalVelocity = 0;
-    this.ignoreCollision = true;
   }
 }
 
@@ -248,7 +247,7 @@ function checkCollisions (entities) {
       let e1 = entities[keys[i]],
           e2 = entities[keys[j]];
 
-      if (e1.ignoreCollisions || e2.ignoreCollisions) {
+      if (e1 instanceof Barrel || e2 instanceof Barrel) {
         continue;
       }
 
